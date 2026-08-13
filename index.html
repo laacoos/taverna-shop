@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#16110d" />
   <title>Лавка Короля Селёдки</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <style>
     :root { color-scheme: dark; --gold:#e4b866; --paper:#251b14; --ink:#f5ead6; --muted:#b9a58d; }
     * { box-sizing:border-box; }
@@ -34,8 +35,8 @@
 </head>
 <body>
   <main>
-    <header><div><div class="eyebrow">Таверна & лавка</div><h1>Король Селёдки</h1></div><div class="balance">🪙 427</div></header>
-    <div class="notice">Добро пожаловать, путник. Сегодня у торговца осталось несколько редких товаров.</div>
+    <header><div><div class="eyebrow">Таверна & лавка</div><h1>Король Селёдки</h1></div><div class="balance" id="balance">🪙 …</div></header>
+    <div class="notice" id="welcome">Опознаю путника через Telegram…</div>
     <section class="grid" id="catalog"><div class="notice">Загружаю товары из лавки…</div></section>
   </main>
   <nav><a href="#">🏺<br>Лавка</a><a href="#">🎒<br>Инвентарь</a><a href="#">📜<br>История</a></nav>
@@ -43,8 +44,14 @@
   <script>
     const SUPABASE_URL='https://rwkxyczvwbhutapurcnz.supabase.co';
     const SUPABASE_KEY='sb_publishable_yKMJE73bhAeOna7HgjnRNA_iX0soiJT';
+    const API_URL=`${SUPABASE_URL}/functions/v1/hyper-task`;
     const catalog=document.querySelector('#catalog');
     const toast=document.querySelector('#toast');
+    const balance=document.querySelector('#balance');
+    const welcome=document.querySelector('#welcome');
+
+    window.Telegram?.WebApp?.ready();
+    window.Telegram?.WebApp?.expand();
 
     function showToast(message){toast.textContent=message;toast.classList.add('show');setTimeout(()=>toast.classList.remove('show'),1800)}
     function escapeHtml(value){const el=document.createElement('div');el.textContent=value??'';return el.innerHTML}
@@ -61,6 +68,26 @@
       .then(response=>{if(!response.ok)throw new Error('Не удалось загрузить каталог');return response.json()})
       .then(render)
       .catch(()=>{catalog.innerHTML='<div class="notice">Не удалось прочитать товары. Проверьте разрешение Supabase.</div>'});
+
+    const initData=window.Telegram?.WebApp?.initData||'';
+    if(!initData){
+      balance.textContent='🪙 —';
+      welcome.textContent='Откройте лавку через кнопку бота в Telegram.';
+    }else{
+      fetch(API_URL,{
+        method:'POST',
+        headers:{'Content-Type':'application/json',apikey:SUPABASE_KEY},
+        body:JSON.stringify({initData})
+      })
+      .then(async response=>{const data=await response.json();if(!response.ok)throw new Error(data.error||'Ошибка входа');return data})
+      .then(({player})=>{
+        balance.textContent=`🪙 ${player.gold}`;
+        welcome.textContent=`Добро пожаловать, ${player.character_name}. Сегодня у торговца осталось несколько редких товаров.`;
+      })
+      .catch(error=>{
+        balance.textContent='🪙 —';
+        welcome.textContent=error.message;
+      });
   </script>
 </body>
 </html>
