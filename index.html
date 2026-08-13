@@ -1,0 +1,168 @@
+import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+import { withSupabase } from "jsr:@supabase/server@^1";
+
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "https://laacoos.github.io",
+  "Access-Control-Allow-Headers": "apikey, authorization, content-type",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+};
+
+const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), {
+  status,
+  headers: { ...corsHeaders, "Content-Type": "application/json; charset=utf-8" },
+});
+const encoder = new TextEncoder();
+
+function toHex(bytes: ArrayBuffer) {
+  return [...new Uint8Array(bytes)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+async function hmac(key: ArrayBuffer | Uint8Array, value: string) {
+  const cryptoKey = await crypto.subtle.importKey(
+    "raw", key, { name: "HMAC", hash: "SHA-256" }, false, ["sign"],
+  );
+  return crypto.subtle.sign("HMAC", cryptoKey, encoder.encode(value));
+}
+
+function safeEqual(left: string, right: string) {
+  if (left.length !== right.length) return false;
+  let difference = 0;
+  for (let i = 0; i < left.length; i++) difference |= left.charCodeAt(i) ^ right.charCodeAt(i);
+  return difference === 0;
+}
+
+async function verifyTelegram(initData: string, botToken: string) {
+  const params = new URLSearchParams(initData);
+  const receivedHash = params.get("hash") ?? "";
+  const authDate = Number(params.get("auth_date"));
+  if (!receivedHash || !authDate) throw new Error("Некорректные данные Telegram");
+  if (Math.abs(Date.now() / 1000 - authDate) > 86400) {
+    throw new Error("Сессия Telegram устарела — откройте магазин заново");
+  }
+
+  params.delete("hash");
+  const checkString = [...params.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([key, value]) => `${key}=${value}`)
+    .join("\n");
+  const secretKey = await hmac(encoder.encode("WebAppData"), botToken);
+  const expectedHash = toHex(await hmac(secretKey, checkString));
+  if (!safeEqual(expectedHash, receivedHash)) throw new Error("Не удалось подтвердить вход через Telegram");
+
+  const rawUser = params.get("user");
+  if (!rawUser) throw new Error("Telegram не передал пользователя");
+  return JSON.parse(rawUser);
+}
+
+export default {
+  fetch: withSupabase({ auth: "none" }, async (request, context) => {
+    if (request.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+    if (request.method !== "POST") return json({ error: "Метод не поддерживается" }, 405);
+
+    try {
+      const { initData, action = "me", itemId } = await request.json();
+      if (typeof initData !== "string" || !initData) return json({ error: "Откройте магазин внутри Telegram" }, 401);
+
+      const botToken = Deno.env.get("TELEGRAM_BOT_TOKEN");
+      if (!botToken) throw new Error("На сервере не задан TELEGRAM_BOT_TOKEN");
+      const telegramUser = await verifyTelegram(initData, botToken);
+      const telegramId = Number(telegramUser.id);
+      const displayName = [telegramUser.first_name, telegramUser.last_name]
+        .filter(Boolean).join(" ") || telegramUser.username || "Путник";
+
+      let { data: player, error } = await context.supabaseAdmin
+        .from("players")
+        .select("id, telegram_user_id, display_name, character_name, gold, is_admin")
+        .eq("telegram_user_id", telegramId)
+        .maybeSingle();
+      if (error) throw error;
+
+      if (!player) {
+        const created = await context.supabaseAdmin.from("players").insert({
+          telegram_user_id: telegramId,
+          telegram_username: telegramUser.username ?? null,
+          display_name: displayName,
+          character_name: displayName,
+        }).select("id, telegram_user_id, display_name, character_name, gold, is_admin").single();
+        if (created.error) throw created.error;
+        player = created.data;
+      } else {
+        await context.supabaseAdmin.from("players").update({
+          telegram_username: telegramUser.username ?? null,
+          display_name: displayName,
+          updated_at: new Date().toISOString(),
+        }).eq("id", player.id);
+      }
+
+      if (action === "inventory") {
+        const inventory = await context.supabaseAdmin
+          .from("inventory")
+          .select("quantity, updated_at, item:items(id, name, description, emoji, rarity)")
+          .eq("player_id", player.id)
+          .order("updated_at", { ascending: false });
+        if (inventory.error) throw inventory.error;
+        return json({ ok: true, player, inventory: inventory.data ?? [] });
+      }
+
+      if (action === "history") {
+        const history = await context.supabaseAdmin
+          .from("transactions")
+          .select("id, kind, gold_change, balance_after, quantity, description, created_at, item:items(name, emoji)")
+          .eq("player_id", player.id)
+          .order("created_at", { ascending: false })
+          .limit(50);
+        if (history.error) throw history.error;
+        return json({ ok: true, player, history: history.data ?? [] });
+      }
+
+      if (action === "consume") {
+        if (typeof itemId !== "string" || !itemId) return json({ error: "Не выбран предмет" }, 400);
+        const consumed = await context.supabaseAdmin.rpc("consume_item", {
+          p_telegram_user_id: telegramId,
+          p_item_id: itemId,
+        });
+        if (consumed.error) throw consumed.error;
+        return json({ ok: true, player, consumed: consumed.data });
+      }
+
+      if (action === "buy") {
+        if (typeof itemId !== "string" || !itemId) return json({ error: "Не выбран товар" }, 400);
+
+        const purchaseResult = await context.supabaseAdmin.rpc("buy_item", {
+          p_telegram_user_id: telegramId,
+          p_item_id: itemId,
+          p_quantity: 1,
+        });
+        if (purchaseResult.error) throw purchaseResult.error;
+        const purchase = purchaseResult.data;
+        player.gold = purchase.balance;
+
+        const admins = await context.supabaseAdmin
+          .from("players")
+          .select("telegram_user_id")
+          .eq("is_admin", true);
+        const message = [
+          "🛎 Покупка в лавке",
+          "",
+          `${player.character_name} приобрёл: ${purchase.item_name}`,
+          `−${purchase.spent} 🪙`,
+          `Баланс: ${purchase.balance} 🪙`,
+        ].join("\n");
+        await Promise.allSettled((admins.data ?? []).map(({ telegram_user_id }) =>
+          fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ chat_id: telegram_user_id, text: message }),
+          })
+        ));
+
+        return json({ ok: true, player, purchase });
+      }
+
+      return json({ ok: true, player });
+    } catch (error) {
+      console.error(error);
+      return json({ error: error instanceof Error ? error.message : "Ошибка сервера" }, 401);
+    }
+  }),
+};
