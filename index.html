@@ -18,7 +18,6 @@
     .notice { margin-bottom:18px; padding:12px 14px; border-left:3px solid var(--gold); border-radius:8px; background:#332619; color:#ddc8aa; }
     .grid { display:grid; gap:13px; }
     article { display:grid; grid-template-columns:76px 1fr; gap:14px; padding:13px; border:1px solid #493729; border-radius:18px; background:linear-gradient(145deg,#2c2119,#201711); box-shadow:0 12px 30px #0005; }
-    .art { display:grid; place-items:center; min-height:92px; border-radius:13px; background:radial-gradient(circle,#654b2f,#2b2018 70%); font-size:38px; }
     .art { display:grid; place-items:center; min-height:92px; border-radius:13px; overflow:hidden; background:radial-gradient(circle,#654b2f,#2b2018 70%); font-size:38px; }
     .art img { width:100%; height:92px; object-fit:cover; }
     h2 { margin:0 0 3px; font:700 18px/1.2 Georgia,serif; }
@@ -39,7 +38,6 @@
     .change.negative { color:#e7a28f; }
     .change.positive { color:#9ed29c; }
     .use-button { margin-top:12px; padding:8px 12px; background:transparent; color:var(--gold); }
-    nav.admin-enabled { grid-template-columns:repeat(4,1fr); }
     nav.admin-enabled { grid-template-columns:repeat(5,1fr); }
     .admin-link { display:none; }
     nav.admin-enabled .admin-link { display:block; }
@@ -64,7 +62,6 @@
     <div class="notice" id="welcome">Опознаю путника через Telegram…</div>
     <section class="grid" id="catalog"><div class="notice">Загружаю товары из лавки…</div></section>
   </main>
-  <nav><a href="#" class="active" data-view="shop">🏺<br>Лавка</a><a href="#" data-view="inventory">🎒<br>Инвентарь</a><a href="#" data-view="history">📜<br>История</a><a href="#" class="admin-link" data-view="admin">⚙️<br>Админка</a></nav>
   <nav><a href="#" class="active" data-view="shop">🏺<br>Лавка</a><a href="#" data-view="inventory">🎒<br>Инвентарь</a><a href="#" data-view="history">📜<br>История</a><a href="#" class="admin-link" data-view="admin">🛠️<br>Товары</a><a href="#" class="admin-link" data-view="players">👥<br>Игроки</a></nav>
   <div id="toast"></div>
   <script>
@@ -142,7 +139,6 @@
     }
     function render(items){
       catalog.innerHTML=items.map(item=>`<article>
-        <div class="art">${escapeHtml(item.emoji||'📦')}</div>
         <div class="art">${art(item)}</div>
         <div><h2>${escapeHtml(item.name)}</h2><p>${escapeHtml(item.description)}</p>
         <div class="meta"><div><span class="price">${item.price} 🪙</span><small>Осталось: ${item.stock}</small></div>
@@ -152,7 +148,6 @@
     }
     async function loadCatalog(){
       try{
-        const response=await fetch(`${SUPABASE_URL}/rest/v1/items?select=id,name,description,emoji,price,stock&is_active=eq.true&stock=gt.0&order=created_at`,{headers:{apikey:SUPABASE_KEY}});
         const response=await fetch(`${SUPABASE_URL}/rest/v1/items?select=id,name,description,emoji,image_url,price,stock&is_active=eq.true&stock=gt.0&order=created_at`,{headers:{apikey:SUPABASE_KEY}});
         if(!response.ok)throw new Error();
         render(await response.json());
@@ -167,7 +162,6 @@
         const {inventory}=await api({initData,action:'inventory'});
         if(!inventory.length){catalog.innerHTML='<div class="empty">🎒<br><br>Инвентарь пока пуст.</div>';return}
         catalog.innerHTML=inventory.map(row=>`<article>
-          <div class="art">${escapeHtml(row.item?.emoji||'📦')}</div>
           <div class="art">${art(row.item)}</div>
           <div><h2>${escapeHtml(row.item?.name||'Предмет')}</h2><p>${escapeHtml(row.item?.description||'')}</p>
           <div class="meta"><span class="price">Количество: ${row.quantity}</span><small>${escapeHtml(row.item?.rarity||'')}</small></div>
@@ -191,7 +185,6 @@
         catalog.innerHTML=history.map(row=>{
           const positive=row.gold_change>0;
           const date=new Date(row.created_at).toLocaleString('ru-RU',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'});
-          return `<article class="history-row"><div class="art">${escapeHtml(row.item?.emoji||(positive?'🎁':'🪙'))}</div>
           return `<article class="history-row"><div class="art">${art(row.item,positive?'🎁':'🪙')}</div>
             <div><h2>${escapeHtml(row.description||'Операция')}</h2><p>${date} · Баланс после: ${row.balance_after} 🪙</p></div>
             <div class="change ${positive?'positive':'negative'}">${positive?'+':''}${row.gold_change}</div></article>`;
@@ -221,11 +214,8 @@
     }
     async function saveItem(card,button){
       const value=name=>card.querySelector(`[name="${name}"]`).value;
-      const item={id:card.dataset.itemId||undefined,name:value('name'),emoji:value('emoji'),description:value('description'),price:Number(value('price')),stock:Number(value('stock')),rarity:value('rarity'),is_active:value('is_active')==='true'};
       let imageUrl=value('image_url');
       button.disabled=true; button.textContent='Сохраняю…';
-      try{await api({initData,action:'adminSaveItem',item});showToast('Товар сохранён');await loadAdmin()}
-      catch(error){showToast(error.message);button.disabled=false;button.textContent=item.id?'Сохранить':'Добавить товар'}
       try{
         const file=card.querySelector('[name="image-file"]').files[0];
         if(file){
@@ -240,14 +230,11 @@
       }
       catch(error){showToast(error.message);button.disabled=false;button.textContent=card.dataset.itemId?'Сохранить':'Добавить товар'}
     }
-    async function adjustGold(playerId,amount,button){
     async function adjustGold(card,button){
       const playerId=card.dataset.playerId;
       const amount=Number(card.querySelector('[name="gold-change"]').value);
       if(!Number.isInteger(amount)||amount===0)return showToast('Введите целую сумму, например 500 или -75');
       button.disabled=true;
-      try{const {target}=await api({initData,action:'adminAdjustGold',playerId,amount});showToast(`Новый баланс: ${target.gold}`);await loadAdmin()}
-      catch(error){showToast(error.message);button.disabled=false}
       try{
         const {target}=await api({initData,action:'adminAdjustGold',playerId,amount});
         showToast(`Новый баланс: ${target.gold}`);
@@ -261,11 +248,8 @@
       try{
         const {items,players}=await api({initData,action:'adminData'});
         catalog.innerHTML=`<div class="section-title">Новый товар</div>${itemForm()}
-          <div class="section-title">Товары</div>${items.map(itemForm).join('')}
-          <div class="section-title">Игроки</div>${players.map(player=>`<article class="admin-card"><h2>${escapeHtml(player.character_name)}</h2><p>${escapeHtml(player.display_name)}${player.is_admin?' · Мастер':''}</p><div class="meta"><span class="price">${player.gold} 🪙</span></div><div class="admin-actions"><button class="secondary" data-gold="-100" data-player="${player.id}">−100</button><button data-gold="100" data-player="${player.id}">+100</button></div></article>`).join('')}`;
           <div class="section-title">Товары</div>${items.map(itemForm).join('')}`;
         catalog.querySelectorAll('[data-save-item]').forEach(button=>button.addEventListener('click',()=>saveItem(button.closest('.admin-card'),button)));
-        catalog.querySelectorAll('[data-gold]').forEach(button=>button.addEventListener('click',()=>adjustGold(button.dataset.player,Number(button.dataset.gold),button)));
         catalog.querySelectorAll('[data-remove-image]').forEach(button=>button.addEventListener('click',()=>{button.closest('.admin-card').querySelector('[name="image_url"]').value='';button.parentElement.remove()}));
       }catch(error){catalog.innerHTML=`<div class="notice">${escapeHtml(error.message)}</div>`}
     }
