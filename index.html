@@ -1,0 +1,284 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#16110d" />
+  <title>Лавка Короля Селёдки</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <style>
+    :root { color-scheme:dark; --gold:#e4b866; --ink:#f5ead6; --muted:#b9a58d; }
+    * { box-sizing:border-box; }
+    body { margin:0; min-height:100vh; font:15px/1.45 system-ui,-apple-system,sans-serif; color:var(--ink); background:radial-gradient(circle at 50% -10%,#4b3320 0,#1b1410 42%,#0f0c0a 100%); }
+    main { width:min(100%,480px); margin:auto; padding:22px 16px 100px; }
+    header { display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:24px; }
+    .eyebrow { color:var(--gold); font-size:11px; font-weight:800; letter-spacing:.16em; text-transform:uppercase; }
+    h1 { margin:4px 0 0; font:700 27px/1.05 Georgia,serif; }
+    .balance { flex:none; padding:10px 13px; border:1px solid #725834; border-radius:14px; background:#201710cc; color:#ffd987; font-weight:800; }
+    .notice { margin-bottom:18px; padding:12px 14px; border-left:3px solid var(--gold); border-radius:8px; background:#332619; color:#ddc8aa; }
+    .grid { display:grid; gap:13px; }
+    article { display:grid; grid-template-columns:76px 1fr; gap:14px; padding:13px; border:1px solid #493729; border-radius:18px; background:linear-gradient(145deg,#2c2119,#201711); box-shadow:0 12px 30px #0005; }
+    .art { display:grid; place-items:center; min-height:92px; border-radius:13px; background:radial-gradient(circle,#654b2f,#2b2018 70%); font-size:38px; }
+    h2 { margin:0 0 3px; font:700 18px/1.2 Georgia,serif; }
+    p { margin:0; color:var(--muted); font-size:13px; }
+    .meta { display:flex; justify-content:space-between; align-items:end; gap:10px; margin-top:12px; }
+    .price { color:#ffd987; font-weight:800; }
+    small { display:block; color:#8f7c68; }
+    button { border:1px solid #d2a85e; border-radius:11px; padding:9px 13px; color:#20150c; background:linear-gradient(#f3cf83,#c99443); font-weight:900; cursor:pointer; }
+    button:active { transform:translateY(1px); }
+    button:disabled { opacity:.55; cursor:default; }
+    nav { position:fixed; left:50%; bottom:0; translate:-50% 0; display:grid; grid-template-columns:repeat(3,1fr); width:min(100%,480px); padding:8px 12px calc(8px + env(safe-area-inset-bottom)); border-top:1px solid #463529; background:#17110eef; backdrop-filter:blur(12px); }
+    nav a { padding:7px; color:#95806a; text-align:center; text-decoration:none; font-size:12px; }
+    nav a.active { color:var(--gold); }
+    .empty { padding:34px 18px; border:1px dashed #5b4634; border-radius:18px; color:var(--muted); text-align:center; }
+    .history-row { grid-template-columns:52px 1fr auto; align-items:center; }
+    .history-row .art { min-height:52px; font-size:25px; }
+    .change { font-weight:900; white-space:nowrap; }
+    .change.negative { color:#e7a28f; }
+    .change.positive { color:#9ed29c; }
+    .use-button { margin-top:12px; padding:8px 12px; background:transparent; color:var(--gold); }
+    nav.admin-enabled { grid-template-columns:repeat(4,1fr); }
+    nav.admin-enabled { grid-template-columns:repeat(5,1fr); }
+    .admin-link { display:none; }
+    nav.admin-enabled .admin-link { display:block; }
+    .admin-card { display:block; }
+    .admin-card h2 { margin-bottom:12px; }
+    .form-grid { display:grid; grid-template-columns:1fr 1fr; gap:9px; }
+    .form-grid .wide { grid-column:1/-1; }
+    label { display:grid; gap:4px; color:var(--muted); font-size:12px; }
+    input, textarea, select { width:100%; border:1px solid #594331; border-radius:9px; padding:9px 10px; color:var(--ink); background:#17110e; font:inherit; }
+    textarea { min-height:66px; resize:vertical; }
+    .admin-actions { display:flex; gap:8px; margin-top:12px; }
+    .admin-actions button { flex:1; }
+    .secondary { color:var(--gold); background:transparent; }
+    .section-title { margin:8px 0 2px; color:var(--gold); font:700 20px Georgia,serif; }
+    #toast { position:fixed; left:50%; bottom:80px; translate:-50% 14px; width:max-content; max-width:90%; padding:11px 16px; border-radius:12px; background:#eee0c5; color:#25180e; opacity:0; transition:.2s; pointer-events:none; }
+    #toast.show { opacity:1; translate:-50% 0; }
+  </style>
+</head>
+<body>
+  <main>
+    <header><div><div class="eyebrow">Таверна & лавка</div><h1>Король Селёдки</h1></div><div class="balance" id="balance">🪙 …</div></header>
+    <div class="notice" id="welcome">Опознаю путника через Telegram…</div>
+    <section class="grid" id="catalog"><div class="notice">Загружаю товары из лавки…</div></section>
+  </main>
+  <nav><a href="#" class="active" data-view="shop">🏺<br>Лавка</a><a href="#" data-view="inventory">🎒<br>Инвентарь</a><a href="#" data-view="history">📜<br>История</a><a href="#" class="admin-link" data-view="admin">⚙️<br>Админка</a></nav>
+  <nav><a href="#" class="active" data-view="shop">🏺<br>Лавка</a><a href="#" data-view="inventory">🎒<br>Инвентарь</a><a href="#" data-view="history">📜<br>История</a><a href="#" class="admin-link" data-view="admin">🛠️<br>Товары</a><a href="#" class="admin-link" data-view="players">👥<br>Игроки</a></nav>
+  <div id="toast"></div>
+  <script>
+    const SUPABASE_URL='https://rwkxyczvwbhutapurcnz.supabase.co';
+    const SUPABASE_KEY='sb_publishable_yKMJE73bhAeOna7HgjnRNA_iX0soiJT';
+    const API_URL=`${SUPABASE_URL}/functions/v1/hyper-task`;
+    const catalog=document.querySelector('#catalog');
+    const toast=document.querySelector('#toast');
+    const balance=document.querySelector('#balance');
+    const welcome=document.querySelector('#welcome');
+    const initData=window.Telegram?.WebApp?.initData||'';
+    const navLinks=[...document.querySelectorAll('nav a')];
+    let currentPlayer=null;
+
+    window.Telegram?.WebApp?.ready();
+    window.Telegram?.WebApp?.expand();
+
+    function showToast(message){toast.textContent=message;toast.classList.add('show');setTimeout(()=>toast.classList.remove('show'),2200)}
+    function escapeHtml(value){const el=document.createElement('div');el.textContent=value??'';return el.innerHTML}
+    function setActiveView(view){navLinks.forEach(link=>link.classList.toggle('active',link.dataset.view===view))}
+    function loading(text){catalog.innerHTML=`<div class="notice">${text}</div>`}
+    async function api(body){
+      const response=await fetch(API_URL,{method:'POST',headers:{'Content-Type':'application/json',apikey:SUPABASE_KEY},body:JSON.stringify(body)});
+      const data=await response.json();
+      if(!response.ok)throw new Error(data.error||'Ошибка сервера');
+      return data;
+    }
+    function confirmPurchase(name,price){
+      const text=`Купить «${name}» за ${price} золотых?`;
+      if(window.Telegram?.WebApp?.showConfirm)return new Promise(resolve=>window.Telegram.WebApp.showConfirm(text,resolve));
+      return Promise.resolve(window.confirm(text));
+    }
+    async function buyItem(button){
+      if(!initData)return showToast('Откройте лавку внутри Telegram');
+      if(!await confirmPurchase(button.dataset.name,button.dataset.price))return;
+      const oldText=button.textContent;
+      button.disabled=true;
+      button.textContent='Покупаю…';
+      try{
+        const {player,purchase}=await api({initData,action:'buy',itemId:button.dataset.id});
+        balance.textContent=`🪙 ${player.gold}`;
+        window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred('success');
+        showToast(`Куплено: ${purchase.item_name}`);
+        await loadCatalog();
+      }catch(error){
+        window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred('error');
+        showToast(error.message);
+        button.disabled=false;
+        button.textContent=oldText;
+      }
+    }
+    async function consumeItem(button){
+      const text=`Использовать «${button.dataset.name}»?`;
+      const confirmed=window.Telegram?.WebApp?.showConfirm
+        ? await new Promise(resolve=>window.Telegram.WebApp.showConfirm(text,resolve))
+        : window.confirm(text);
+      if(!confirmed)return;
+      button.disabled=true;
+      button.textContent='Использую…';
+      try{
+        const {consumed}=await api({initData,action:'consume',itemId:button.dataset.id});
+        window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred('success');
+        showToast(`Использовано: ${consumed.item_name}`);
+        await loadInventory();
+      }catch(error){
+        window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred('error');
+        showToast(error.message);
+        button.disabled=false;
+        button.textContent='Использовать';
+      }
+    }
+    function render(items){
+      catalog.innerHTML=items.map(item=>`<article>
+        <div class="art">${escapeHtml(item.emoji||'📦')}</div>
+        <div><h2>${escapeHtml(item.name)}</h2><p>${escapeHtml(item.description)}</p>
+        <div class="meta"><div><span class="price">${item.price} 🪙</span><small>Осталось: ${item.stock}</small></div>
+        <button data-id="${item.id}" data-name="${escapeHtml(item.name)}" data-price="${item.price}" ${item.stock<1?'disabled':''}>${item.stock<1?'Продано':'Купить'}</button></div></div>
+      </article>`).join('');
+      catalog.querySelectorAll('button:not([disabled])').forEach(button=>button.addEventListener('click',()=>buyItem(button)));
+    }
+    async function loadCatalog(){
+      try{
+        const response=await fetch(`${SUPABASE_URL}/rest/v1/items?select=id,name,description,emoji,price,stock&is_active=eq.true&stock=gt.0&order=created_at`,{headers:{apikey:SUPABASE_KEY}});
+        if(!response.ok)throw new Error();
+        render(await response.json());
+      }catch{catalog.innerHTML='<div class="notice">Не удалось загрузить товары.</div>'}
+    }
+    async function loadInventory(){
+      if(!initData)return showToast('Откройте лавку внутри Telegram');
+      setActiveView('inventory');
+      welcome.textContent='Ваши трофеи и покупки.';
+      loading('Открываю инвентарь…');
+      try{
+        const {inventory}=await api({initData,action:'inventory'});
+        if(!inventory.length){catalog.innerHTML='<div class="empty">🎒<br><br>Инвентарь пока пуст.</div>';return}
+        catalog.innerHTML=inventory.map(row=>`<article>
+          <div class="art">${escapeHtml(row.item?.emoji||'📦')}</div>
+          <div><h2>${escapeHtml(row.item?.name||'Предмет')}</h2><p>${escapeHtml(row.item?.description||'')}</p>
+          <div class="meta"><span class="price">Количество: ${row.quantity}</span><small>${escapeHtml(row.item?.rarity||'')}</small></div>
+          <button class="use-button" data-use-id="${row.item?.id}" data-use-name="${escapeHtml(row.item?.name||'Предмет')}">Использовать</button></div>
+        </article>`).join('');
+        catalog.querySelectorAll('[data-use-id]').forEach(button=>{
+          button.dataset.id=button.dataset.useId;
+          button.dataset.name=button.dataset.useName;
+          button.addEventListener('click',()=>consumeItem(button));
+        });
+      }catch(error){catalog.innerHTML=`<div class="notice">${escapeHtml(error.message)}</div>`}
+    }
+    async function loadHistory(){
+      if(!initData)return showToast('Откройте лавку внутри Telegram');
+      setActiveView('history');
+      welcome.textContent='Последние операции с золотом.';
+      loading('Листаю торговую книгу…');
+      try{
+        const {history}=await api({initData,action:'history'});
+        if(!history.length){catalog.innerHTML='<div class="empty">📜<br><br>История пока пуста.</div>';return}
+        catalog.innerHTML=history.map(row=>{
+          const positive=row.gold_change>0;
+          const date=new Date(row.created_at).toLocaleString('ru-RU',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'});
+          return `<article class="history-row"><div class="art">${escapeHtml(row.item?.emoji||(positive?'🎁':'🪙'))}</div>
+            <div><h2>${escapeHtml(row.description||'Операция')}</h2><p>${date} · Баланс после: ${row.balance_after} 🪙</p></div>
+            <div class="change ${positive?'positive':'negative'}">${positive?'+':''}${row.gold_change}</div></article>`;
+        }).join('');
+      }catch(error){catalog.innerHTML=`<div class="notice">${escapeHtml(error.message)}</div>`}
+    }
+    async function showShop(){
+      setActiveView('shop');
+      welcome.textContent='Сегодня у торговца осталось несколько редких товаров.';
+      loading('Загружаю товары из лавки…');
+      await loadCatalog();
+    }
+    function itemForm(item={}){
+      return `<article class="admin-card" data-item-id="${item.id||''}"><h2>${item.id?escapeHtml(item.name):'Новый товар'}</h2>
+        <div class="form-grid">
+          <label>Название<input name="name" value="${escapeHtml(item.name||'')}" /></label>
+          <label>Эмодзи<input name="emoji" value="${escapeHtml(item.emoji||'📦')}" /></label>
+          <label class="wide">Описание<textarea name="description">${escapeHtml(item.description||'')}</textarea></label>
+          <label>Цена<input name="price" type="number" min="0" value="${item.price??0}" /></label>
+          <label>Остаток<input name="stock" type="number" min="0" value="${item.stock??0}" /></label>
+          <label>Редкость<input name="rarity" value="${escapeHtml(item.rarity||'Обычный')}" /></label>
+          <label>Продажа<select name="is_active"><option value="true" ${item.is_active!==false?'selected':''}>Включена</option><option value="false" ${item.is_active===false?'selected':''}>Выключена</option></select></label>
+        </div><div class="admin-actions"><button data-save-item>${item.id?'Сохранить':'Добавить товар'}</button></div></article>`;
+    }
+    async function saveItem(card,button){
+      const value=name=>card.querySelector(`[name="${name}"]`).value;
+      const item={id:card.dataset.itemId||undefined,name:value('name'),emoji:value('emoji'),description:value('description'),price:Number(value('price')),stock:Number(value('stock')),rarity:value('rarity'),is_active:value('is_active')==='true'};
+      button.disabled=true; button.textContent='Сохраняю…';
+      try{await api({initData,action:'adminSaveItem',item});showToast('Товар сохранён');await loadAdmin()}
+      catch(error){showToast(error.message);button.disabled=false;button.textContent=item.id?'Сохранить':'Добавить товар'}
+    }
+    async function adjustGold(playerId,amount,button){
+    async function adjustGold(card,button){
+      const playerId=card.dataset.playerId;
+      const amount=Number(card.querySelector('[name="gold-change"]').value);
+      if(!Number.isInteger(amount)||amount===0)return showToast('Введите целую сумму, например 500 или -75');
+      button.disabled=true;
+      try{const {target}=await api({initData,action:'adminAdjustGold',playerId,amount});showToast(`Новый баланс: ${target.gold}`);await loadAdmin()}
+      catch(error){showToast(error.message);button.disabled=false}
+      try{
+        const {target}=await api({initData,action:'adminAdjustGold',playerId,amount});
+        showToast(`Новый баланс: ${target.gold}`);
+        if(currentPlayer?.id===target.id){currentPlayer.gold=target.gold;balance.textContent=`🪙 ${target.gold}`}
+        await loadPlayers();
+      }catch(error){showToast(error.message);button.disabled=false}
+    }
+    async function loadAdmin(){
+      if(!currentPlayer?.is_admin)return showToast('Доступ только для мастера');
+      setActiveView('admin'); welcome.textContent='Управление лавкой и золотом игроков.'; loading('Открываю книгу мастера…');
+      try{
+        const {items,players}=await api({initData,action:'adminData'});
+        catalog.innerHTML=`<div class="section-title">Новый товар</div>${itemForm()}
+          <div class="section-title">Товары</div>${items.map(itemForm).join('')}
+          <div class="section-title">Игроки</div>${players.map(player=>`<article class="admin-card"><h2>${escapeHtml(player.character_name)}</h2><p>${escapeHtml(player.display_name)}${player.is_admin?' · Мастер':''}</p><div class="meta"><span class="price">${player.gold} 🪙</span></div><div class="admin-actions"><button class="secondary" data-gold="-100" data-player="${player.id}">−100</button><button data-gold="100" data-player="${player.id}">+100</button></div></article>`).join('')}`;
+          <div class="section-title">Товары</div>${items.map(itemForm).join('')}`;
+        catalog.querySelectorAll('[data-save-item]').forEach(button=>button.addEventListener('click',()=>saveItem(button.closest('.admin-card'),button)));
+        catalog.querySelectorAll('[data-gold]').forEach(button=>button.addEventListener('click',()=>adjustGold(button.dataset.player,Number(button.dataset.gold),button)));
+      }catch(error){catalog.innerHTML=`<div class="notice">${escapeHtml(error.message)}</div>`}
+    }
+    async function loadPlayers(){
+      if(!currentPlayer?.is_admin)return showToast('Доступ только для мастера');
+      setActiveView('players'); welcome.textContent='Игроки и их баланс золота.'; loading('Собираю список игроков…');
+      try{
+        const {players}=await api({initData,action:'adminData'});
+        catalog.innerHTML=players.map(player=>`<article class="admin-card" data-player-id="${player.id}">
+          <h2>${escapeHtml(player.character_name)}</h2><p>${escapeHtml(player.display_name)}${player.is_admin?' · Мастер':''}</p>
+          <div class="meta"><span class="price">Баланс: ${player.gold} 🪙</span></div>
+          <div class="form-grid" style="margin-top:12px"><label class="wide">Изменить на сумму<input name="gold-change" type="number" step="1" placeholder="Например: 500 или -75" /></label></div>
+          <div class="admin-actions"><button data-apply-gold>Применить</button></div></article>`).join('');
+        catalog.querySelectorAll('[data-apply-gold]').forEach(button=>button.addEventListener('click',()=>adjustGold(button.closest('.admin-card'),button)));
+      }catch(error){catalog.innerHTML=`<div class="notice">${escapeHtml(error.message)}</div>`}
+    }
+
+    navLinks.forEach(link=>link.addEventListener('click',event=>{
+      event.preventDefault();
+      if(link.dataset.view==='shop')showShop();
+      if(link.dataset.view==='inventory')loadInventory();
+      if(link.dataset.view==='history')loadHistory();
+      if(link.dataset.view==='admin')loadAdmin();
+      if(link.dataset.view==='players')loadPlayers();
+    }));
+
+    loadCatalog();
+    if(!initData){
+      balance.textContent='🪙 —';
+      welcome.textContent='Откройте лавку через кнопку бота в Telegram.';
+    }else{
+      api({initData}).then(({player})=>{
+        currentPlayer=player;
+        balance.textContent=`🪙 ${player.gold}`;
+        welcome.textContent=`Добро пожаловать, ${player.character_name}. Сегодня у торговца осталось несколько редких товаров.`;
+        if(player.is_admin)document.querySelector('nav').classList.add('admin-enabled');
+      }).catch(error=>{
+        balance.textContent='🪙 —';
+        welcome.textContent=error.message;
+      });
+    }
+  </script>
+</body>
+</html>
